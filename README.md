@@ -1,17 +1,28 @@
-# CameraLink - IP Camera App
+# CameraLink - IP Camera & Tailscale Keep-Alive App
 
-Turn your Android phone into an IP camera and stream video footage over your local network - even with the screen off!
+Turn your Android phone into an IP camera and stream video footage over your local network - even with the screen off! Now with built-in Tailscale connection keep-alive to ensure your VPN connections stay active 24/7.
 
 ## Features
 
-- 📹 **Live Video Streaming**: Stream your phone's camera feed in real-time
-- 🌐 **Web-Based Viewing**: View the stream from any device with a web browser
-- 📱 **Simple Interface**: Easy-to-use UI with one-tap streaming
-- 🔴 **Live Indicator**: Visual feedback when streaming is active
-- 📸 **Snapshot Support**: Capture still images from the stream
-- 🌙 **Background Streaming**: Continue streaming even when screen is off
-- 🔋 **Foreground Service**: Reliable streaming with wake lock support
-- 🔔 **Persistent Notification**: Shows stream URL and allows easy control
+### 📹 Camera Streaming
+- **Live Video Streaming**: Stream your phone's camera feed in real-time
+- **Web-Based Viewing**: View the stream from any device with a web browser
+- **Simple Interface**: Easy-to-use UI with one-tap streaming
+- **Live Indicator**: Visual feedback when streaming is active
+- **Snapshot Support**: Capture still images from the stream
+- **Background Streaming**: Continue streaming even when screen is off
+- **Foreground Service**: Reliable streaming with wake lock support
+- **Persistent Notification**: Shows stream URL and allows easy control
+
+### 🔗 Tailscale Keep-Alive (NEW!)
+- **Automatic Ping Service**: Pings Tailscale devices every 15 seconds
+- **MagicDNS Support**: Use hostnames instead of IPs
+- **Pre-configured Devices**: 4 default devices ready to ping
+- **Manual Ping**: On-demand testing with "Ping Now" button
+- **Live Status Display**: See which devices are online/offline
+- **Persistent Notification**: Shows ping status (e.g., "3/4 devices online")
+- **Background Operation**: Runs 24/7 to keep connections alive
+- **Easy Management**: Add/remove devices via UI
 
 ## Quick Start Guide
 
@@ -42,6 +53,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### 2. Basic Usage
 
+#### Camera Streaming
+
 **On Your Phone:**
 1. Launch the CameraLink app
 2. Grant all requested permissions (Camera, Notifications)
@@ -58,6 +71,34 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - Tap "Stop" in the notification, or
 - Reopen the app and tap "Stop Streaming"
 
+#### Tailscale Keep-Alive (NEW!)
+
+The app automatically pings Tailscale devices to keep connections alive.
+
+**Default Devices (Pre-configured):**
+- erics-macbook-pro-2
+- iphone-14-pro-max
+- laptop-l2vhnlt6
+- whs-macbook-pro-1
+
+**To Add More Devices:**
+1. Scroll to "⚙️ Manage Tailscale Peers" card
+2. Tap "➕ Add Peer"
+3. Enter a Tailscale IP (e.g., `100.64.1.5`) or hostname (e.g., `my-laptop`)
+4. Tap "Add"
+
+**To Test Connectivity:**
+1. Scroll to "🔗 Tailscale Connections" card
+2. Tap "🔄 Ping Now"
+3. See which devices are online (✅) or offline (❌)
+4. Check timestamp of last ping
+
+**Monitor Background Pinging:**
+- Check the persistent notification: "Tailscale Ping Active"
+- Shows status like "Pinging 4 device(s): 3 online"
+- Runs automatically every 15 seconds
+- Works even when app is closed
+
 ### 3. Screen-Off Streaming
 
 The killer feature! Your stream continues even when the phone screen is off:
@@ -70,7 +111,7 @@ The killer feature! Your stream continues even when the phone screen is off:
 
 ## How It Works
 
-### Architecture
+### Camera Streaming Architecture
 
 - **Camera**: Uses CameraX API for reliable camera access
 - **Streaming**: MJPEG stream over HTTP using NanoHTTPD server
@@ -80,6 +121,16 @@ The killer feature! Your stream continues even when the phone screen is off:
 - **Frame Rate**: Approximately 30 FPS
 - **Format**: JPEG compression at 80% quality
 
+### Tailscale Keep-Alive Architecture
+
+- **Foreground Service**: TailscalePingService runs 24/7 as foreground service
+- **Ping Interval**: Pings all configured devices every 15 seconds
+- **DNS Resolution**: Supports both IPs (100.64.x.x) and MagicDNS hostnames
+- **Notification**: Shows real-time status in persistent notification
+- **IP Detection**: Auto-detects local Tailscale IPs on this device
+- **Manual Configuration**: Add remote Tailscale peers via UI
+- **Logging**: Comprehensive logging with emojis for easy debugging
+
 ### Key Components
 
 1. **CameraStreamingService**: Background service for camera streaming
@@ -87,12 +138,26 @@ The killer feature! Your stream continues even when the phone screen is off:
    - Wake lock management
    - Camera lifecycle handling without UI
 
-2. **MainActivity**: Service control interface
+2. **TailscalePingService**: Background service for Tailscale keep-alive
+   - Foreground service with persistent notification
+   - Pings every 15 seconds
+   - Updates notification with results
+   - Survives app closure
+
+3. **TailscalePinger**: Utility for pinging Tailscale connections
+   - Detects local Tailscale IPs (100.64.0.0/10 range)
+   - Manages configured peer list
+   - DNS resolution for MagicDNS hostnames
+   - Returns success/failure for each target
+
+4. **MainActivity**: Service control interface
    - Start/Stop streaming service
    - Display stream URL
+   - Tailscale ping status display
+   - Peer management UI
    - Permission handling
 
-3. **StreamingServer**: HTTP server for MJPEG streaming
+5. **StreamingServer**: HTTP server for MJPEG streaming
    - Multiple endpoints (/, /stream, /snapshot, /test)
    - Proper YUV to NV21 conversion
    - Handles stride and pixel stride correctly
@@ -212,9 +277,215 @@ You can also view the stream in VLC:
 4. Access that URL from anywhere
 5. Free tier has limitations but great for testing
 
+## Monitoring & Logs
+
+### Camera Streaming Logs
+```bash
+# Monitor camera streaming
+adb logcat | grep -E "CameraStreaming|StreamingServer"
+```
+
+### Tailscale Ping Logs
+```bash
+# Monitor Tailscale pinging (enhanced with emojis!)
+adb logcat | grep -E "TailscalePing"
+
+# Expected output every 15 seconds:
+# I/TailscalePingService: 🚀 Started pinging every 15 seconds
+# D/TailscalePingService: 🔄 Starting ping cycle...
+# D/TailscalePinger: Resolved erics-macbook-pro-2 to 100.64.1.5
+# D/TailscalePinger: ✅ Successfully pinged erics-macbook-pro-2 (100.64.1.5)
+# D/TailscalePinger: ❌ Error pinging laptop-l2vhnlt6: Network unreachable
+# I/TailscalePingService: ✅ Ping cycle complete: 3/4 successful
+```
+
+### Real-Time Monitoring
+```bash
+# Watch logs in real-time with tail
+watch -n 1 'adb logcat -d | grep TailscalePing | tail -20'
+
+# Save logs to file
+adb logcat -d > cameralink_logs.txt
+```
+
+### Check Service Status
+```bash
+# Check if app is running
+adb shell ps | grep cameralink
+
+# Check notifications
+adb shell dumpsys notification | grep cameralink
+```
+
+## Advanced Configuration
+
+### Change Default Tailscale Devices
+
+Edit `app/src/main/java/com/example/cameralink/TailscalePinger.kt` line ~22:
+
+```kotlin
+private val configuredTailscaleIps = mutableSetOf<String>(
+    "erics-macbook-pro-2",      // Replace with your devices
+    "iphone-14-pro-max",
+    "laptop-l2vhnlt6",
+    "whs-macbook-pro-1",
+    "my-new-device"             // Add more devices
+)
+```
+
+### Change Ping Interval
+
+Edit `app/src/main/java/com/example/cameralink/TailscalePingService.kt` line ~32:
+
+```kotlin
+private const val PING_INTERVAL_MS = 15000L // Change to desired milliseconds
+// Examples:
+// 10 seconds: 10000L
+// 30 seconds: 30000L
+// 1 minute: 60000L
+```
+
+### Change Streaming Port
+
+Edit `app/src/main/java/com/example/cameralink/MainActivity.kt`:
+
+```kotlin
+val port = 8080  // Change to desired port
+```
+
+### Disable Tailscale Auto-Start
+
+Comment out in `MainActivity.kt` onCreate():
+
+```kotlin
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    enableEdgeToEdge()
+
+    // Comment this line to disable auto-start:
+    // TailscalePingService.start(this)
+
+    setContent { "..." }
+}
+```
+
+## Building from Source
+
+### Prerequisites
+- Android Studio Arctic Fox or later
+- Android SDK 31+
+- Gradle 7.0+
+- Kotlin 1.9+
+
+### Build Steps
+```bash
+# Clone repository
+git clone https://github.com/yourusername/camera-link.git
+cd camera-link
+
+# Build debug APK
+./gradlew assembleDebug
+
+# Build release APK (requires signing)
+./gradlew assembleRelease
+
+# Install to connected device
+./gradlew installDebug
+
+# Clean build
+./gradlew clean assembleDebug
+```
+
+### Dependencies
+- AndroidX Core KTX
+- AndroidX Lifecycle
+- Jetpack Compose
+- CameraX
+- NanoHTTPD (HTTP server)
+- Accompanist Permissions
+- WorkManager
+- Kotlin Coroutines
+
+## FAQ
+
+### Q: Does this work over the internet?
+**A:** By default, only on local network. Use port forwarding, VPN, or Tailscale for remote access.
+
+### Q: Can I use this as a security camera?
+**A:** Yes! Especially with screen-off streaming. Consider these enhancements:
+- Set up remote access via VPN
+- Use a phone mount/tripod
+- Enable "Stay awake while charging" in Developer Options
+- Consider motion detection (future feature)
+
+### Q: What's the battery impact?
+**A:** 
+- Camera streaming: Moderate (similar to video recording)
+- Tailscale pinging only: Minimal (< 1% per hour)
+- With screen off: Significantly less than screen on
+- Use wake lock efficiently
+
+### Q: Why Tailscale keep-alive?
+**A:** Tailscale connections can timeout if inactive. Regular pinging keeps connections alive, ensuring:
+- Faster reconnection when needed
+- No NAT traversal delays
+- Persistent connectivity for services
+- Better for accessing devices remotely
+
+### Q: Can I ping non-Tailscale devices?
+**A:** Currently optimized for Tailscale (100.64-127.x.x range). You can add any hostname that resolves, but it's designed for Tailscale MagicDNS.
+
+### Q: Does this drain my mobile data?
+**A:** No. Camera streaming uses WiFi only. Tailscale pings use Tailscale VPN (very minimal data - just ICMP packets).
+
+### Q: Can I change what devices to ping?
+**A:** Yes! Two ways:
+1. Via UI: "⚙️ Manage Tailscale Peers" → Add/Remove
+2. Via Code: Edit `TailscalePinger.kt` (see Advanced Configuration)
+
+### Q: Will this keep my Tailscale connection from timing out?
+**A:** Yes! That's exactly what it's designed for. Pinging every 15 seconds keeps NAT mappings alive and ensures your devices stay connected.
+
+### Q: Can I see ping history?
+**A:** Currently shows last ping results in UI. Check logs for detailed history: `adb logcat | grep TailscalePing`
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is open source. See LICENSE file for details.
+
+## Support
+
+For issues, questions, or feature requests, please open an issue on GitHub.
+
+## Changelog
+
+### Version 1.1 (Latest)
+- ✅ Added Tailscale keep-alive service
+- ✅ MagicDNS hostname support
+- ✅ 4 default devices pre-configured
+- ✅ Live status display with ✅/❌ indicators
+- ✅ Persistent notification for ping service
+- ✅ Enhanced logging with emojis
+- ✅ Scrollable UI for better UX
+- ✅ Manual ping button for on-demand testing
+- ✅ Peer management UI (add/remove devices)
+
+### Version 1.0
+- Initial release
+- Camera streaming over HTTP
+- Background streaming with screen off
+- Web-based viewer
+- Snapshot support
+
 ## Troubleshooting
 
-### Stream Not Accessible
+### Camera Streaming Issues
+
+#### Stream Not Accessible
 
 **Check WiFi**: Phone must be on WiFi (not mobile data by default)
 - Verify phone is connected to WiFi
@@ -235,7 +506,7 @@ You can also view the stream in VLC:
 - Not using VPN unless intentional
 - No network isolation enabled
 
-### Stream Stops When Screen Off
+#### Stream Stops When Screen Off
 
 **Check Permissions**: Ensure all permissions granted
 - Camera permission
@@ -249,6 +520,92 @@ You can also view the stream in VLC:
 
 **Check Notification**: Should show "Camera streaming active"
 - If notification disappears, service was killed
+
+### Tailscale Keep-Alive Issues
+
+#### No Notification / Service Not Running
+
+**Solution:**
+1. Restart the app
+2. Notification should appear: "Tailscale Ping Active"
+3. If not, check Settings → Apps → CameraLink → Notifications
+
+**Battery Optimization:**
+- Settings → Apps → CameraLink → Battery → Unrestricted
+- Some phones (Xiaomi, Huawei) are very aggressive with battery management
+- Add app to battery whitelist/never sleep list
+
+#### Devices Show ❌ (Not Reachable)
+
+**Possible Causes:**
+- Device is offline or shut down
+- Tailscale not running on target device
+- Wrong hostname or IP entered
+- Firewall blocking ICMP ping
+- Network connectivity issue
+
+**Debug Steps:**
+```bash
+# Check Tailscale status on your phone
+tailscale status
+
+# Test ping from command line
+ping erics-macbook-pro-2
+
+# Or ping by IP
+ping 100.64.1.5
+
+# Check Tailscale is running on target device
+tailscale status  # on target device
+```
+
+#### Hostname Not Resolving
+
+**Check:**
+- Is Tailscale running? Run `tailscale status`
+- Is the hostname correct? Check `tailscale status` for device names
+- Is MagicDNS enabled? Check Tailscale admin console
+- Try using the IP directly instead (100.64.x.x)
+
+**Get Device Hostnames:**
+```bash
+# On any device in your Tailscale network
+tailscale status
+
+# Shows: hostname 100.64.x.x ...
+```
+
+#### Service Stops After a While
+
+**On Aggressive Battery Management Phones:**
+- Xiaomi/MIUI: Security → Permissions → Autostart → Enable for CameraLink
+- Huawei/EMUI: Settings → Battery → App launch → Manage manually
+- Samsung: Settings → Apps → CameraLink → Battery → Unrestricted
+- OnePlus: Settings → Battery → Battery optimization → Don't optimize
+
+#### Can't Add Peer - "Not in Tailscale Range"
+
+**Valid Tailscale IPs:**
+- Must be in range: 100.64.0.0 to 100.127.255.255
+- Common mistake: entering WiFi IP (192.168.x.x) instead
+
+**Get Correct IP:**
+```bash
+tailscale ip -4  # Get your Tailscale IPv4 address
+```
+
+#### Pings Work But Don't Keep Connection Alive
+
+**Tailscale Specifics:**
+- Tailscale connections can still timeout even with pings
+- 15-second interval should be sufficient for most cases
+- Check Tailscale logs: `tailscale status --active`
+- Verify both devices show as connected
+
+**Alternative Solutions:**
+- Use Tailscale's built-in exit nodes
+- Enable "Override local DNS" in Tailscale settings
+- Check NAT traversal: `tailscale status` shows relay vs direct
 - Check battery optimization settings
 
 ### Poor Stream Quality
