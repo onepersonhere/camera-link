@@ -237,10 +237,15 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
 
     private fun handleAddPeer(session: IHTTPSession): Response {
         return try {
-            val files = HashMap<String, String>()
-            session.parseBody(files)
-            val postData = files["postData"] ?: ""
+            // Read the body content
+            val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+            val bodyBytes = ByteArray(contentLength)
 
+            if (contentLength > 0) {
+                session.inputStream.read(bodyBytes, 0, contentLength)
+            }
+
+            val postData = String(bodyBytes)
             val json = JSONObject(postData)
             val target = json.getString("target")
 
@@ -258,9 +263,10 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
             )
         } catch (e: Exception) {
             println("StreamingServer: Error adding peer: ${e.message}")
+            e.printStackTrace()
             val errorResponse = JSONObject()
             errorResponse.put("success", false)
-            errorResponse.put("error", e.message)
+            errorResponse.put("error", e.message ?: "Unknown error")
             newFixedLengthResponse(
                 Response.Status.BAD_REQUEST,
                 "application/json",
@@ -271,10 +277,15 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
 
     private fun handleRemovePeer(session: IHTTPSession): Response {
         return try {
-            val files = HashMap<String, String>()
-            session.parseBody(files)
-            val postData = files["postData"] ?: ""
+            // Read the body content for DELETE requests
+            val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+            val bodyBytes = ByteArray(contentLength)
 
+            if (contentLength > 0) {
+                session.inputStream.read(bodyBytes, 0, contentLength)
+            }
+
+            val postData = String(bodyBytes)
             val json = JSONObject(postData)
             val target = json.getString("target")
 
@@ -291,9 +302,11 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
                 jsonResponse.toString()
             )
         } catch (e: Exception) {
+            println("StreamingServer: Error removing peer: ${e.message}")
+            e.printStackTrace()
             val errorResponse = JSONObject()
             errorResponse.put("success", false)
-            errorResponse.put("error", e.message)
+            errorResponse.put("error", e.message ?: "Unknown error")
             newFixedLengthResponse(
                 Response.Status.BAD_REQUEST,
                 "application/json",
