@@ -23,7 +23,9 @@ object TailscalePinger {
         "erics-macbook-pro-2",
         "iphone-14-pro-max",
         "laptop-l2vhnlt6",
-        "whs-macbook-pro-1"
+        "whs-macbook-pro-1",
+        "matt.tail08eb66.ts.net",
+        "oppo-cph2697.tail08eb66.ts.net"
     )
 
     /**
