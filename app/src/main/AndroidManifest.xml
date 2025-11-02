@@ -36,6 +36,11 @@
                 android:enabled="true"
                 android:exported="false"
                 android:foregroundServiceType="camera" />
+
+        <service
+                android:name=".TailscalePingService"
+                android:enabled="true"
+                android:exported="false" />
     </application>
 
 </manifest>

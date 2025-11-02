@@ -59,6 +59,9 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.33.2-alpha")
 
+    // WorkManager for periodic tasks
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
