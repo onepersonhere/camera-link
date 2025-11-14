@@ -100,6 +100,15 @@ fun ServiceControlScreen() {
     var ipAddress by remember { mutableStateOf(getIpAddress()) }
     val port = 8080
 
+    // Auto-start the streaming service when the screen loads
+    LaunchedEffect(Unit) {
+        if (!isStreaming) {
+            CameraStreamingService.startService(context, port)
+            ipAddress = getIpAddress()
+            isStreaming = true
+        }
+    }
+
     // Tailscale ping state
     var isPinging by remember { mutableStateOf(false) }
     var lastPingResults by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
