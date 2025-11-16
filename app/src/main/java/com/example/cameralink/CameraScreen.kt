@@ -85,7 +85,8 @@ fun CameraScreen() {
                             .build()
                             .also {
                                 it.setAnalyzer(cameraExecutor) { imageProxy ->
-                                    streamingServer?.updateFrame(imageProxy)
+                                    val jpeg = imageProxyToJpegByteArray(imageProxy)
+                                    streamingServer?.updateFrame(jpeg)
                                     imageProxy.close()
                                 }
                             }
@@ -249,4 +250,3 @@ private fun getIpAddress(context: Context): String {
     }
     return "Unable to get IP"
 }
-

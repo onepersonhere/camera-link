@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,6 +119,9 @@ fun ServiceControlScreen() {
     var showAddIpDialog by remember { mutableStateOf(false) }
     var newIpText by remember { mutableStateOf("") }
     var configuredIps by remember { mutableStateOf(TailscalePinger.getConfiguredIps().toList()) }
+
+    val prefsRepo = remember { RecordingPreferencesRepository(context) }
+    val recordingPrefs by prefsRepo.preferencesFlow.collectAsState(initial = RecordingPreferences())
 
     Column(
         modifier = Modifier
@@ -499,6 +503,89 @@ fun ServiceControlScreen() {
                 )
             }
         }
+
+        RecordingControlsCard(
+            prefs = recordingPrefs,
+            onRecordingEnabledChange = { enabled ->
+                coroutineScope.launch { prefsRepo.updateLocalRecordingEnabled(enabled) }
+                if (enabled) RecordingController.startRecording(context) else RecordingController.stopRecording(context)
+            },
+            onScheduleEnabledChange = { enabled ->
+                coroutineScope.launch { prefsRepo.updateScheduleEnabled(enabled) }
+            },
+            onStartTimeChange = { minutes -> coroutineScope.launch { prefsRepo.updateStartMinutes(minutes) } },
+            onEndTimeChange = { minutes -> coroutineScope.launch { prefsRepo.updateEndMinutes(minutes) } }
+        )
+    }
+}
+
+@Composable
+fun RecordingControlsCard(
+    prefs: RecordingPreferences,
+    onRecordingEnabledChange: (Boolean) -> Unit,
+    onScheduleEnabledChange: (Boolean) -> Unit,
+    onStartTimeChange: (Int) -> Unit,
+    onEndTimeChange: (Int) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2a2a2a))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("💾 Local Recording", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Enable on-device recording", color = Color.White)
+                    Text("Stores last 24h of footage locally", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+                Switch(checked = prefs.localRecordingEnabled, onCheckedChange = onRecordingEnabledChange)
+            }
+            Spacer(Modifier.height(16.dp))
+            Divider(color = Color(0x334CAF50))
+            Spacer(Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Daily schedule", color = Color.White)
+                    Text("Record only during selected window", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+                Switch(checked = prefs.scheduleEnabled, onCheckedChange = onScheduleEnabledChange, enabled = prefs.localRecordingEnabled)
+            }
+            if (prefs.scheduleEnabled) {
+                Spacer(Modifier.height(12.dp))
+                TimeSelector("Start", prefs.startMinutes, onStartTimeChange)
+                Spacer(Modifier.height(8.dp))
+                TimeSelector("Stop", prefs.endMinutes, onEndTimeChange)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeSelector(label: String, minutes: Int, onMinutesChanged: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = remember { (0 until 24).flatMap { h -> listOf(h*60, h*60+30) } }
+    Column(Modifier.fillMaxWidth()) {
+        Text("$label time", style = MaterialTheme.typography.labelLarge, color = Color(0xFF4CAF50))
+        Spacer(Modifier.height(6.dp))
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+            TextField(
+                value = minutesLabel(minutes),
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                colors = ExposedDropdownMenuDefaults.textFieldColors(),
+                modifier = Modifier.menuAnchor().fillMaxWidth()
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { opt ->
+                    DropdownMenuItem(text = { Text(minutesLabel(opt)) }, onClick = { onMinutesChanged(opt); expanded = false })
+                }
+            }
+        }
     }
 }
 
@@ -619,3 +706,4 @@ fun PermissionRationale(onRequestPermission: () -> Unit) {
         }
     }
 }
+

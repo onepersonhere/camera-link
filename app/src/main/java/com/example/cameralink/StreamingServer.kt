@@ -1,9 +1,5 @@
 package com.example.cameralink
 
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
-import androidx.camera.core.ImageProxy
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -16,111 +12,12 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
 
     private val currentFrame = AtomicReference<ByteArray>()
 
-    @androidx.camera.core.ExperimentalGetImage
-    fun updateFrame(imageProxy: ImageProxy) {
-        try {
-            val jpegBytes = imageProxyToJpeg(imageProxy)
-            if (jpegBytes.isNotEmpty()) {
-                currentFrame.set(jpegBytes)
-                println("StreamingServer: Frame updated, size: ${jpegBytes.size} bytes")
-            } else {
-                println("StreamingServer: WARNING - Empty frame generated!")
-            }
-        } catch (e: Exception) {
-            println("StreamingServer: ERROR in updateFrame: ${e.message}")
-            e.printStackTrace()
+    fun updateFrame(jpegBytes: ByteArray) {
+        if (jpegBytes.isEmpty()) {
+            println("StreamingServer: WARNING - Empty frame provided")
+            return
         }
-    }
-
-    @androidx.camera.core.ExperimentalGetImage
-    private fun imageProxyToJpeg(imageProxy: ImageProxy): ByteArray {
-        try {
-            val image = imageProxy.image
-            if (image == null) {
-                println("StreamingServer: ERROR - image is null")
-                return ByteArray(0)
-            }
-
-            val width = imageProxy.width
-            val height = imageProxy.height
-
-            // Get the YUV planes
-            val yPlane = image.planes[0]
-            val uPlane = image.planes[1]
-            val vPlane = image.planes[2]
-
-            val ySize = width * height
-            val uvSize = width * height / 2
-
-            val nv21 = ByteArray(ySize + uvSize)
-
-            // Copy Y plane - handle row stride
-            val yBuffer = yPlane.buffer
-            val yRowStride = yPlane.rowStride
-            val yPixelStride = yPlane.pixelStride
-
-            yBuffer.rewind()
-
-            if (yPixelStride == 1 && yRowStride == width) {
-                // Optimized path: no padding
-                yBuffer.get(nv21, 0, ySize)
-            } else {
-                // Handle padding: copy row by row
-                var pos = 0
-                for (row in 0 until height) {
-                    yBuffer.position(row * yRowStride)
-                    yBuffer.get(nv21, pos, width)
-                    pos += width
-                }
-            }
-
-            // Convert U and V planes to NV21 format (interleaved VUVUVU...)
-            val vBuffer = vPlane.buffer
-            val uBuffer = uPlane.buffer
-            val uvRowStride = uPlane.rowStride
-            val uvPixelStride = uPlane.pixelStride
-
-            vBuffer.rewind()
-            uBuffer.rewind()
-
-            var pos = ySize
-
-            if (uvPixelStride == 1) {
-                // U and V are already packed, just interleave them
-                for (row in 0 until height / 2) {
-                    vBuffer.position(row * uvRowStride)
-                    uBuffer.position(row * uvRowStride)
-                    @Suppress("UNUSED_VARIABLE")
-                    for (col in 0 until width / 2) {
-                        nv21[pos++] = vBuffer.get()
-                        nv21[pos++] = uBuffer.get()
-                    }
-                }
-            } else {
-                // U and V have pixel stride > 1, need to sample
-                for (row in 0 until height / 2) {
-                    for (col in 0 until width / 2) {
-                        val offset = row * uvRowStride + col * uvPixelStride
-                        vBuffer.position(offset)
-                        uBuffer.position(offset)
-                        nv21[pos++] = vBuffer.get()
-                        nv21[pos++] = uBuffer.get()
-                    }
-                }
-            }
-
-            // Convert to JPEG
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-            val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, width, height), 80, out)
-            val result = out.toByteArray()
-
-            return result
-        } catch (e: Exception) {
-            println("StreamingServer: ERROR in imageProxyToJpeg: ${e.message}")
-            e.printStackTrace()
-            return ByteArray(0)
-        }
+        currentFrame.set(jpegBytes)
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -793,4 +690,3 @@ class StreamingServer(port: Int) : NanoHTTPD(port) {
         }
     }
 }
-

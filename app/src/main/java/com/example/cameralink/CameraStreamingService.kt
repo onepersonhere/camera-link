@@ -16,6 +16,15 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.net.NetworkInterface
 import java.util.concurrent.Executors
 
@@ -25,6 +34,14 @@ class CameraStreamingService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
+    private var recorder: LocalVideoRecorder? = null
+    private lateinit var recordingScheduler: RecordingScheduler
+    private lateinit var prefsRepo: RecordingPreferencesRepository
+    private var streamingPort: Int = 8080
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val _recordingState = MutableStateFlow(false)
+    val recordingState: StateFlow<Boolean> = _recordingState.asStateFlow()
 
     companion object {
         private const val NOTIFICATION_ID = 1001
@@ -32,6 +49,9 @@ class CameraStreamingService : LifecycleService() {
         const val ACTION_START_STREAMING = "com.example.cameralink.START_STREAMING"
         const val ACTION_STOP_STREAMING = "com.example.cameralink.STOP_STREAMING"
         const val EXTRA_PORT = "port"
+        const val ACTION_START_RECORDING = "com.example.cameralink.START_RECORDING"
+        const val ACTION_STOP_RECORDING = "com.example.cameralink.STOP_RECORDING"
+        const val EXTRA_FORCE = "force"
 
         fun startService(context: Context, port: Int = 8080) {
             val intent = Intent(context, CameraStreamingService::class.java).apply {
@@ -57,6 +77,19 @@ class CameraStreamingService : LifecycleService() {
         super.onCreate()
         createNotificationChannel()
         acquireWakeLock()
+        prefsRepo = RecordingPreferencesRepository(this)
+        recordingScheduler = RecordingScheduler(applicationContext)
+        recorder = LocalVideoRecorder(applicationContext)
+        startRetentionWorker()
+        scope.launch {
+            prefsRepo.preferencesFlow.collectLatest { prefs ->
+                if (prefs.localRecordingEnabled && prefs.scheduleEnabled.not()) {
+                    startLocalRecording(force = true)
+                } else if (!prefs.localRecordingEnabled) {
+                    stopLocalRecording()
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,12 +98,18 @@ class CameraStreamingService : LifecycleService() {
         when (intent?.action) {
             ACTION_START_STREAMING -> {
                 val port = intent.getIntExtra(EXTRA_PORT, 8080)
+                streamingPort = port
                 startStreaming(port)
             }
             ACTION_STOP_STREAMING -> {
                 stopStreaming()
                 stopSelf()
             }
+            ACTION_START_RECORDING -> {
+                val force = intent.getBooleanExtra(EXTRA_FORCE, false)
+                startLocalRecording(force)
+            }
+            ACTION_STOP_RECORDING -> stopLocalRecording()
         }
 
         return START_STICKY
@@ -95,6 +134,19 @@ class CameraStreamingService : LifecycleService() {
         notificationManager.notify(NOTIFICATION_ID, updatedNotification)
     }
 
+    private fun startLocalRecording(force: Boolean = false) {
+        if (!force && !recordingScheduler.shouldRecordNow()) return
+        recorder?.start()
+        _recordingState.value = true
+        updateNotificationRecordingState(isRecording = true)
+    }
+
+    private fun stopLocalRecording() {
+        recorder?.stop()
+        _recordingState.value = false
+        updateNotificationRecordingState(isRecording = false)
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -106,7 +158,9 @@ class CameraStreamingService : LifecycleService() {
                     .build()
                     .also {
                         it.setAnalyzer(cameraExecutor) { imageProxy ->
-                            streamingServer?.updateFrame(imageProxy)
+                            val jpegBytes = imageProxyToJpegByteArray(imageProxy)
+                            streamingServer?.updateFrame(jpegBytes)
+                            recorder?.appendFrame(jpegBytes)
                             imageProxy.close()
                         }
                     }
@@ -128,8 +182,11 @@ class CameraStreamingService : LifecycleService() {
     private fun stopStreaming() {
         streamingServer?.stop()
         streamingServer = null
+        recorder?.stop()
+        recorder?.release()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
+        scope.cancel()
         releaseWakeLock()
     }
 
@@ -232,6 +289,18 @@ class CameraStreamingService : LifecycleService() {
         return ""
     }
 
+    private fun updateNotificationRecordingState(isRecording: Boolean = recorder?.isRecording() == true) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val ipAddress = getIpAddress()
+        val title = if (isRecording) "Streaming & Recording" else "Camera streaming active"
+        val notification = createNotification(title, ipAddress, streamingPort)
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun startRetentionWorker() {
+        LocalVideoRetentionWorker.schedule(applicationContext)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopStreaming()
@@ -242,4 +311,3 @@ class CameraStreamingService : LifecycleService() {
         return null
     }
 }
-
